@@ -1,89 +1,63 @@
-use std::str::FromStr;
-
-use bech32::{u5, ToBase32};
-use bs58;
-use rand_core::OsRng; // 通过 getrandom 特性启用的 OsRng，与 bip39 的 rand_core 0.5 匹配
+use base58::ToBase58;
+use bip39::{Language, Mnemonic, Seed};
+use bitcoin_hashes::hex::ToHex;
+use bitcoin_hashes::{sha256, Hash};
+use ripemd::Ripemd160;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
+use sha2::{Digest, Sha256};
 
-use bip32::secp256k1::Secp256k1; // 指定 Secp256k1 密钥材料
-use bip32::{ChildNumber, DerivationPath, ExtendedPrivateKey};
-use bip39::{Language, Mnemonic};
-use bitcoin_hashes::{hash160, sha256, Hash};
+fn generate_mnemonic() -> Mnemonic {
+    Mnemonic::generate_in(Language::English, 12).unwrap()
+}
+
+fn mnemonic_to_seed(mnemonic: &Mnemonic, passphrase: &str) -> Vec<u8> {
+    Seed::new(mnemonic, passphrase).as_bytes().to_vec()
+}
+
+fn private_key_to_wif(private_key: &SecretKey) -> String {
+    let mut wif = Vec::new();
+    wif.push(0x80); // Mainnet prefix
+    wif.extend(private_key.secret_bytes());
+
+    let checksum = sha256::Hash::hash(&sha256::Hash::hash(&wif)).to_byte_array();
+    wif.extend(&checksum[0..4]);
+
+    wif.to_base58()
+}
+
+fn public_key_to_address(public_key: &PublicKey) -> String {
+    let sha256_hash = Sha256::digest(&public_key.serialize());
+    let ripemd_hash = Ripemd160::digest(&sha256_hash);
+
+    let mut address = Vec::new();
+    address.push(0x00); // Mainnet prefix for P2PKH
+    address.extend(&ripemd_hash);
+
+    let checksum = Sha256::digest(&Sha256::digest(&address));
+    address.extend(&checksum[0..4]);
+
+    address.to_base58()
+}
 
 fn main() {
-    // 使用 generate_in_with + OsRng 来生成助记词
-    let mut rng = OsRng;
-    let mnemonic = Mnemonic::generate_in_with(&mut rng, Language::English, 12)
-        .expect("Failed to generate mnemonic");
-
-    println!("Mnemonic: {}", mnemonic);
-
-    let seed_bytes = mnemonic.to_seed("");
     let secp = Secp256k1::new();
 
-    // 指定 ExtendedPrivateKey 使用 Secp256k1 类型
-    let mut xprv: ExtendedPrivateKey<Secp256k1> =
-        ExtendedPrivateKey::new(&seed_bytes).expect("Failed to create ExtendedPrivateKey");
+    // Step 1: Generate Mnemonic
+    let mnemonic = generate_mnemonic();
+    println!("Generated Mnemonic: {}", mnemonic.phrase());
 
-    let derivation_path = DerivationPath::from_str("m/44'/0'/0'/0/0").unwrap();
+    // Step 2: Convert Mnemonic to Seed
+    let seed = mnemonic_to_seed(&mnemonic, "");
 
-    // 手动遍历派生路径的每个 ChildNumber，依次派生子私钥
-    for cnum in derivation_path.into_iter() {
-        xprv = xprv.derive_child(cnum).expect("Failed to derive child key");
-    }
+    // Step 3: Generate Private Key
+    let private_key = SecretKey::from_slice(&seed[0..32]).expect("32 bytes, within curve order");
+    println!("Private Key (WIF): {}", private_key_to_wif(&private_key));
 
-    let sk = SecretKey::from_slice(&xprv.private_key().to_bytes()).expect("Invalid secret key");
-    let public_key = PublicKey::from_secret_key(&secp, &sk);
+    // Step 4: Generate Public Key
+    let public_key = PublicKey::from_secret_key(&secp, &private_key);
+    println!("Public Key: {}", public_key);
 
-    let wif = private_key_to_wif(&sk, true);
-    println!("Private Key (WIF): {}", wif);
-
-    let p2pkh_address = public_key_to_p2pkh(&public_key);
-    println!("P2PKH Address: {}", p2pkh_address);
-
-    let p2wpkh_address = public_key_to_p2wpkh(&public_key);
-    println!("P2WPKH (Bech32) Address: {}", p2wpkh_address);
-}
-
-fn private_key_to_wif(sk: &SecretKey, compressed: bool) -> String {
-    let sk_bytes = sk.secret_bytes();
-    let mut payload = vec![0x80];
-    payload.extend_from_slice(&sk_bytes);
-    if compressed {
-        payload.push(0x01);
-    }
-    let checksum = double_sha256(&payload);
-    let wif_bytes = [&payload[..], &checksum[0..4]].concat();
-    bs58::encode(wif_bytes).into_string()
-}
-
-fn public_key_to_p2pkh(pk: &PublicKey) -> String {
-    let pk_bytes = pk.serialize();
-    let hash160_pubkey = hash160::Hash::hash(&pk_bytes);
-
-    let mut payload = vec![0x00];
-    payload.extend_from_slice(&hash160_pubkey[..]);
-
-    let checksum = double_sha256(&payload);
-    let address_bytes = [&payload[..], &checksum[0..4]].concat();
-    bs58::encode(address_bytes).into_string()
-}
-
-fn public_key_to_p2wpkh(pk: &PublicKey) -> String {
-    let pk_bytes = pk.serialize();
-    let hash160_pubkey = hash160::Hash::hash(&pk_bytes);
-
-    let hrp = "bc";
-    let mut data = Vec::new();
-    data.push(u5::try_from_u8(0).unwrap());
-    data.extend(hash160_pubkey.to_base32());
-    bech32::encode(hrp, data, bech32::Variant::Bech32).expect("Bech32 encoding failed")
-}
-
-fn double_sha256(data: &[u8]) -> [u8; 32] {
-    let first = sha256::Hash::hash(data);
-    let second = sha256::Hash::hash(&first);
-    let mut result = [0u8; 32];
-    result.copy_from_slice(&second);
-    result
+    // Step 5: Generate BTC Address
+    let btc_address = public_key_to_address(&public_key);
+    println!("BTC Address: {}", btc_address);
 }
