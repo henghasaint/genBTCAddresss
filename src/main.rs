@@ -1,7 +1,7 @@
 use bech32::{self, ToBase32};
 use bs58;
 use rand::rngs::OsRng;
-use ripemd::Ripemd160;
+use ripemd160::{Digest, Ripemd160};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use sha2::{Digest, Sha256};
 
