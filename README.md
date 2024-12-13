@@ -84,6 +84,7 @@
    ```bash
    git clone https://example.com/genBTCAddresss.git
    cd genBTCAddresss
+   export RUST_SECP256K1_NO_VENDOR=1
    cargo build --release
    ```
 

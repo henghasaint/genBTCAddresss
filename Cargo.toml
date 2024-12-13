@@ -4,16 +4,10 @@ version = "1.0.0"
 edition = "2021"
 
 [dependencies]
-rand = "0.8"
-bip39 = "1.0"
-bip32 = "0.2"
-sha2 = "0.10"
-ripemd160 = "0.9"
+rand_core = { version = "0.5", features = ["getrandom"] }
+secp256k1 = "0.27"
 bs58 = "0.4"
 bech32 = "0.8"
-
-# 使用系统安装的 libsecp256k1
-[dependencies.secp256k1]
-version = "0.27"
-features = ["external"]
-
+bip39 = "1.2.0"
+bip32 = "0.2.2"
+bitcoin_hashes = "0.11"
