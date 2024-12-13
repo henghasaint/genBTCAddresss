@@ -7,7 +7,6 @@ edition = "2024"
 rand = "0.8"
 bip39 = "1.0"
 bip32 = "0.2"
-secp256k1 = "0.27"
 sha2 = "0.10"
 ripemd = "0.7"
 bs58 = "0.4"
@@ -15,4 +14,6 @@ bech32 = "0.8"
 
 # 使用系统安装的 libsecp256k1
 [dependencies.secp256k1]
+version = "0.27"
 features = ["external"]
+
